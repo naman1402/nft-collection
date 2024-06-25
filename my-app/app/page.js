@@ -1,95 +1,261 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import { Contract, Network, parseEther, providers, utils } from "ethers";
+import { useEffect, useRef, useState } from "react";
+import Web3Modal from "web3modal";
+import { abi, ADDRESS } from "./constant";
+import {styles} from "../styles/Home.module.css"
+
 
 export default function Home() {
-  return (
-    <main className={styles.main}>
-      <div className={styles.description}>
-        <p>
-          Get started by editing&nbsp;
-          <code className={styles.code}>app/page.js</code>
-        </p>
+  const [walletConnected, setWalletConnected] = useState(false)
+  const [presaleStarted, setPresaleStarted] = useState(false)
+  const [presaleEnded, setPresaleEnded] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
+  const [tokenIdsMinted, setTokenIdsMinted] = useState("0")
+  const web3ModalRef = useRef()
+
+  const presaleMint = async () => {
+    try {
+      const signer = await getProviderOrSigner(true)
+      const whiteListContract = new Contract(ADDRESS, abi, signer)
+      const tx = await whiteListContract.presaleMint({
+        value: parseEther("0.01"),
+      });
+      setLoading(true)
+      await tx.wait()
+      setLoading(false)
+      window.alert("successfully minted a nft")
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const publicMint = async () => {
+    try {
+      const signer = await getProviderOrSigner(true)
+      const whiteListContract = new Contract(ADDRESS, abi, signer)
+      const tx = await whiteListContract.mint({
+        value: parseEther("0.01"),
+      });
+      setLoading(true)
+      await tx.wait()
+      setLoading(false)
+      window.alert("successfully minted a nft")
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const connectWallet = async () => {
+    try {
+      await getProviderOrSigner();
+      setWalletConnected(true)
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const startPresale = async () => {
+    try {
+      const signer = await getProviderOrSigner(true)
+      const whiteListContract = new Contract(ADDRESS, abi, signer)
+      const tx = await whiteListContract.startPresale()
+      setLoading(true)
+      await tx.wait()
+      setLoading(false)
+      await checkIfPresaleStarted()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const checkIfPresaleStarted = async() => {
+    try {
+      const provider = await getProviderOrSigner()
+      const nftContract = new Contract(ADDRESS, abi, provider)
+      const _presaleStarted = await nftContract.presaleStarted()
+      if (!_presaleStarted) {
+        await getOwner();
+      }
+      setPresaleStarted(_presaleStarted)
+      return _presaleStarted
+    } catch (err) {
+      console.error(err)
+      return false
+    }
+  }
+
+  const checkIfPresaleEnded = async() => {
+    try {
+      const provider = await getProviderOrSigner();
+      const nftContract = new Contract(ADDRESS, abi, provider);
+      // call the presaleEnded from the contract
+      const _presaleEnded = await nftContract.presaleEnded();
+      const hasEnded = _presaleEnded.lt(Math.floor(Date.now() / 1000));
+      if (hasEnded) {
+        setPresaleEnded(true);
+      } else {
+        setPresaleEnded(false);
+      }
+      return hasEnded;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  }
+
+  const getOwner = async() => {
+    try {
+      const provider = await getProviderOrSigner()
+      const nftContract = new Contract(ADDRESS, abi, provider)
+      const _owner = await nftContract.owner()
+      const signer = await getProviderOrSigner(true)
+      const address = await signer.getAddress()
+      if(address.toLowerCase() === _owner.toLowerCase()) {
+        setIsOwner(true);
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const getTokenIdsMinted = async() => {
+    try {
+      const provider = await getProviderOrSigner()
+      const nftContract = new Contract(ADDRESS, abi, provider)
+      const _tokenIds = await nftContract.tokenIds()
+      setTokenIdsMinted(_tokenIds.toString())
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const getProviderOrSigner = async(needSigner = false) => {
+    const provider = await web3ModalRef.current.connect()
+    const web3Provider = new providers.Web3Provider(provider)
+    const { chainId } = await web3Provider.getNetwork()
+    if (chainId !== 80002) {
+      window.alert("change the network to polygon amoy testnet")
+      throw new Error("Change network to Polygon amoy testnet")
+    }
+
+    if(needSigner) {
+      const signer = web3Provider.getSigner()
+      return signer
+    }
+    return web3Provider
+  }
+
+  useEffect(() => {
+    if(!walletConnected) {
+      web3ModalRef.current = new Web3Modal({
+        network: "polygon",
+        providerOptions: {},
+        disableInjectedProvider: false,
+      })
+      connectWallet()
+
+      const _presaleStarted = checkIfPresaleStarted()
+      if(_presaleStarted) {
+        checkIfPresaleEnded();
+      }
+      getTokenIdsMinted()
+      const presaleEndedInterval = setInterval(async function () {
+        const _presaleStarted = await checkIfPresaleStarted();
+        if(_presaleStarted) {
+          const _presaleEnded = await checkIfPresaleEnded()
+
+          if(_presaleEnded) {
+            clearInterval(presaleEndedInterval)
+          }
+        }
+      }, 5 * 1000);
+
+      setInterval(async function () {
+        await getTokenIdsMinted()
+      }, 5 * 1000)
+    }
+  }, [walletConnected]);
+
+  const renderButton = () => {
+    if(!walletConnected) {
+      return(
+        <button onClick={connectWallet} className={styles.button}>
+          connect your wallet
+        </button>
+      )
+    }
+
+    if(loading) {
+      return <button className={styles.button}>Loading....</button>
+    }
+
+    if(isOwner && !presaleStarted) {
+      return (
+        <button className={styles.button} onClick={startPresale}>
+          Start Presale!
+        </button>
+      );
+    }
+
+    if (!presaleStarted) {
+      return (
         <div>
-          <a
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className={styles.vercelLogo}
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+          <div className={styles.description}>Presale hasnt started!</div>
         </div>
+      );
+    }
+
+    if (presaleStarted && !presaleEnded) {
+      return (
+        <div>
+          <div className={styles.description}>
+            Presale has started!!! If your address is whitelisted, Mint a
+            Crypto Dev 🥳
+          </div>
+          <button className={styles.button} onClick={presaleMint}>
+            Presale Mint 🚀
+          </button>
+        </div>
+      );
+    }
+
+    if (presaleStarted && presaleEnded) {
+      return (
+        <button className={styles.button} onClick={publicMint}>
+          Public Mint 🚀
+        </button>
+      );
+    }
+  }
+
+  return(
+    <div>
+        <Head>
+          <title>Crypto Devs</title>
+          <meta name="description" content="Whitelist-Dapp" />
+          <link rel="icon" href="/favicon.ico" />
+        </Head>
+        <div className={styles.main}>
+          <div>
+            <h1 className={styles.title}>Welcome to Crypto Devs!</h1>
+            <div className={styles.description}>
+              Its an NFT collection for developers in Crypto.
+            </div>
+            <div className={styles.description}>
+              {tokenIdsMinted}/20 have been minted
+            </div>
+            {renderButton()}
+          </div>
+          <div>
+            <img className={styles.image} src="../public/images/0.svg" />
+          </div>
+        </div>
+
+        <footer className={styles.footer}>
+          Made with &#10084; by Crypto Devs
+        </footer>
       </div>
 
-      <div className={styles.center}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className={styles.grid}>
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Docs <span>-&gt;</span>
-          </h2>
-          <p>Find in-depth information about Next.js features and API.</p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Learn <span>-&gt;</span>
-          </h2>
-          <p>Learn about Next.js in an interactive course with&nbsp;quizzes!</p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Templates <span>-&gt;</span>
-          </h2>
-          <p>Explore starter templates for Next.js.</p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className={styles.card}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2>
-            Deploy <span>-&gt;</span>
-          </h2>
-          <p>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  );
+  )
 }
