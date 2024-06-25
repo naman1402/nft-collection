@@ -1,8 +1,11 @@
-import { Contract, Network, parseEther, providers, utils } from "ethers";
-import { useEffect, useRef, useState } from "react";
+"use client"
+
+import { Contract, ethers, providers, utils } from "ethers";
+import React, { useEffect, useRef, useState } from "react";
+import Head from "next/head";
 import Web3Modal from "web3modal";
 import { abi, ADDRESS } from "./constant";
-import {styles} from "../styles/Home.module.css"
+import styles from "../styles/Home.module.css"
 
 
 export default function Home() {
@@ -19,7 +22,7 @@ export default function Home() {
       const signer = await getProviderOrSigner(true)
       const whiteListContract = new Contract(ADDRESS, abi, signer)
       const tx = await whiteListContract.presaleMint({
-        value: parseEther("0.01"),
+        value: utils.parseEther("0.01"),
       });
       setLoading(true)
       await tx.wait()
@@ -35,7 +38,7 @@ export default function Home() {
       const signer = await getProviderOrSigner(true)
       const whiteListContract = new Contract(ADDRESS, abi, signer)
       const tx = await whiteListContract.mint({
-        value: parseEther("0.01"),
+        value: utils.parseEther("0.01"),
       });
       setLoading(true)
       await tx.wait()
@@ -131,9 +134,11 @@ export default function Home() {
   }
 
   const getProviderOrSigner = async(needSigner = false) => {
-    const provider = await web3ModalRef.current.connect()
-    const web3Provider = new providers.Web3Provider(provider)
-    const { chainId } = await web3Provider.getNetwork()
+    const provider = await web3ModalRef.current.connect();
+    // const _provider = new ethers.BrowserProvider(window.ethereum)
+    const web3Provider = new providers.Web3Provider(provider);
+    
+    const { chainId } = await web3Provider.getNetwork();
     if (chainId !== 80002) {
       window.alert("change the network to polygon amoy testnet")
       throw new Error("Change network to Polygon amoy testnet")
@@ -147,6 +152,7 @@ export default function Home() {
   }
 
   useEffect(() => {
+
     if(!walletConnected) {
       web3ModalRef.current = new Web3Modal({
         network: "polygon",
@@ -160,10 +166,11 @@ export default function Home() {
         checkIfPresaleEnded();
       }
       getTokenIdsMinted()
+
       const presaleEndedInterval = setInterval(async function () {
         const _presaleStarted = await checkIfPresaleStarted();
         if(_presaleStarted) {
-          const _presaleEnded = await checkIfPresaleEnded()
+          const _presaleEnded = await checkIfPresaleEnded();
 
           if(_presaleEnded) {
             clearInterval(presaleEndedInterval)
